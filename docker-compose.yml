@@ -1,0 +1,71 @@
+version: "3.5"
+services:
+
+  mongo:
+    image: mongo
+    container_name: dc_mongo_db
+    # ports:
+    #   - "27015-27019:27015-27019"
+    hostname: dc_mongo
+    networks:
+      - dbnet
+      # dbnet:
+      #   aliases:
+      #     - dc_mongo
+
+  app:
+    container_name: dc_app
+    depends_on:
+      - mongo
+    # ports:
+    #   - "3000:3000"
+    image: dc_app
+    build: 
+      context: https://github.com/strokovnjaka/shroomate.git
+      dockerfile: dockerfile
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 32)
+      - MONGODB_ATLAS_URI="mongodb://dc_mongo:27017/shroomate?directConnection=true&serverSelectionTimeoutMS=2000&appName=mongosh+2.1.1"
+    hostname: dc_app
+    networks:
+      - appnet
+      # appnet:
+      #   aliases:
+      #     - dc_app
+      - dbnet
+
+  certbot:
+    container_name: dc_certbot
+    image: certbot/certbot:latest
+    volumes:
+      - ./certbot/www/:/var/www/certbot/:rw
+      - ./certbot/conf/:/etc/letsencrypt/:rw
+    profiles:
+      - cert
+    depends_on:
+      - nginx
+    command: certonly --webroot -w /var/www/certbot -d essa-vm-07.lrk.si --non-interactive --agree-tos --register-unsafely-without-email
+
+  nginx:
+    container_name: dc_nginx
+    depends_on:
+      - app
+    image: nginx:alpine
+    environment:
+      - DOMAIN=essa-vm-07.lrk.si
+    volumes:
+      - $PWD/templates:/etc/nginx/templates
+      - $PWD/certbot/www/:/var/www/certbot/:ro
+      - $PWD/certbot/conf/live/essa-vm-07.lrk.si:/etc/letsencrypt/certs
+    hostname: dc_nginx
+    networks:
+      - appnet
+    ports:
+      - 80:80
+      - 443:443
+    restart: unless-stopped
+
+networks:
+  dbnet:
+  appnet:
